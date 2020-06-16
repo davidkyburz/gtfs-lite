@@ -3,6 +3,9 @@ import datetime
 
 import pandas as pd
 
+import os
+import shutil
+
 class DateNotValidException(Exception):
     pass
 
@@ -319,6 +322,7 @@ class GTFS:
         Returns:
             valid (bool): True if valid, false otherwise.
         """
+        
         summary = self.summary()
         if summary.first_date > date or summary.last_date < date:
             return False
@@ -338,8 +342,10 @@ class GTFS:
         Returns
             trip_slice (DataFrame): A subset of the trips DataFrame.
         """
+        
+        dt = datetime.datetime.strptime(datestring, '%Y%m%d')
         # First, get all standard trips that run on that particular day of the week
-        if not self.valid_date(datestring):
+        if not self.valid_date(dt):
             raise DateNotValidException
 
         dayname = datetime.datetime.strptime(str(datestring), "%Y%m%d").strftime("%A").lower()
@@ -497,3 +503,42 @@ class GTFS:
         min_split = grouped['min'].str.split(":", expand=True).astype(int)
         grouped['diff'] = (max_split[0] - min_split[0]) + (max_split[1] - min_split[1])/60 + (max_split[2] - min_split[2])/3600
         return(grouped['diff'].sum())
+    
+    def cleanup_stop_geom(self):
+        
+        for index, row in self.stops.iterrows():
+            if(pd.isnull(row['stop_lat'])):
+                self.stops.at[index, 'stop_lat'] = 0
+                self.stops.at[index, 'stop_lon'] = 0
+                
+    def gtfs_export(self):
+        
+        name = str(self.agency[self.agency['agency_id'] == '1']['agency_name'][1])
+        os.makedirs(name, exist_ok=True)
+        
+        #converting dates back into strings
+        self.calendar['start_date'] = self.calendar['start_date'].astype(str)
+        self.calendar['end_date'] = self.calendar['end_date'].astype(str)
+        self.calendar_dates['date'] = self.calendar_dates['date'].astype(str)
+        
+        for index, row in self.calendar.iterrows():
+            datestring_start = str(row['start_date'])
+            datestring_end = str(row['end_date'])
+            self.calendar.at[index, 'start_date'] = datestring_start[0:4] + datestring_start[5:7] + datestring_start[8:10]
+            self.calendar.at[index, 'end_date'] = datestring_end[0:4] + datestring_end[5:7] + datestring_end[8:10]
+            
+        for index, row in self.calendar_dates.iterrows():
+            datestring= str(row['date'])
+            self.calendar_dates.at[index, 'date'] = datestring[0:4] + datestring[5:7] + datestring[8:10]
+            
+        #exporting only the required files for otp
+        self.agency.to_csv('self/agency.txt', index = False)
+        self.stops.to_csv('self/stops.txt', index = False)
+        self.routes.to_csv('self/routes.txt', index = False)
+        self.trips.to_csv('self/trips.txt', index = False)
+        self.stop_times.to_csv('self/stop_times.txt', index = False)
+        self.calendar.to_csv('self/calendar.txt', index = False)
+        self.calendar_dates.to_csv('self/calendar_dates.txt', index = False)
+        self.shapes.to_csv('self/shapes.txt', index = False)
+        
+        shutil.make_archive(name, 'zip', name)
